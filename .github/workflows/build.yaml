@@ -9,44 +9,55 @@ on:
       - main
       - homolog
     types: [opened, synchronize, reopened]
+
 jobs:
-  commitlint:
+  setup:
+    name: Setup and Cache Dependencies
     runs-on: ubuntu-22.04
+    outputs:
+      node_modules_cache_hit: ${{ steps.cache-npm.outputs.cache-hit }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install required dependencies
-        run: |
-          apt update
-          apt install -y sudo
-          sudo apt install -y git curl
-          curl -sL https://deb.nodesource.com/setup_14.x | sudo -E bash -
-          sudo DEBIAN_FRONTEND=noninteractive apt install -y nodejs
-      - name: Print versions
-        run: |
-          git --version
-          node --version
-          npm --version
-          npx commitlint --version
-      - name: Install commitlint
-        run: |
-          npm install conventional-changelog-conventionalcommits
-          npm install commitlint@latest
 
-      - name: Validate current commit (last commit) with commitlint
-        if: github.event_name == 'push'
-        run: npx commitlint --last --verbose
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-      - name: Validate PR commits with commitlint
-        if: github.event_name == 'pull_request'
-        run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+      - name: Cache dependencies
+        id: cache-npm
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm install
+
+  commitlint:
+    needs: setup
+    name: Commitlint job
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Restore Cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Check Commit
+        run: npm run prepare
 
   format-code:
+    needs: commitlint
     name: Format Code with Prettier
     runs-on: ubuntu-22.04
 
@@ -54,97 +65,47 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Prettify code
-        uses: creyD/prettier_action@v4.3
+      - name: Restore Cache
+        uses: actions/cache@v3
         with:
-          prettier_options: --write **/*.{js,md}
-          only_changed: True
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Format Code
+        run: npm run format
 
   lint-code:
+    needs: format-code
     name: Lint Code with ESLint
     runs-on: ubuntu-22.04
-    needs: format-code
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Restore Cache
+        uses: actions/cache@v3
         with:
-          node-version: 18
-
-      - name: Install dependencies
-        run: npm install
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
       - name: Run ESLint
-        run: npx eslint . --ext .ts,.tsx,.js,.jsx
-
-  apply-template:
-    name: Create Template for Pull Request
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout código
-        uses: actions/checkout@v4
-
-      - name: Obter primeiro commit do PR
-        id: get_commit
-        run: |
-          FIRST_COMMIT=$(git log --format="%s" -n 1 ${{ github.event.pull_request.head.sha }})
-          echo "FIRST_COMMIT=$FIRST_COMMIT" >> $GITHUB_ENV
-
-      - name: Selecionar template baseado no prefixo do commit
-        id: select_template
-        run: |
-          if [[ "${{ env.FIRST_COMMIT }}" =~ ^feat ]]; then
-            echo "TEMPLATE=feature.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^fix ]]; then
-            echo "TEMPLATE=bugfix.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^chore ]]; then
-            echo "TEMPLATE=chore.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^refactor ]]; then
-            echo "TEMPLATE=refactor.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^perf ]]; then
-            echo "TEMPLATE=perf.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^perf ]]; then
-            echo "TEMPLATE=perf.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^perf ]]; then
-            echo "TEMPLATE=perf.md" >> $GITHUB_ENV
-          fi
-
-      - name: Atualizar descrição do PR
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const templatePath = `.github/PULL_REQUEST_TEMPLATE/${process.env.TEMPLATE}`;
-            if (fs.existsSync(templatePath)) {
-              const templateContent = fs.readFileSync(templatePath, 'utf8');
-              github.rest.pulls.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.payload.pull_request.number,
-                body: templateContent
-              });
-            }
+        run: npm run lint
 
   sonarcloud:
+    needs: lint-code
     name: SonarCloud Scan
     runs-on: ubuntu-22.04
-    needs: lint-code
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Restore Cache
+        uses: actions/cache@v3
         with:
-          node-version: 18
-
-      - name: Install dependencies
-        run: npm install
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
       - name: Run tests with coverage
         run: npm run test:cov
