@@ -1,0 +1,79 @@
+services:
+  database:
+    image: postgres:16.0-alpine
+    container_name: database
+    tty: true
+    restart: always
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - network_for_api
+    ports:
+      - 5440:5432
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=database
+
+  database-for-testing:
+    image: postgres:16.0-alpine
+    container_name: database-for-testing
+    tty: true
+    restart: always
+    volumes:
+      - pgdata-test:/var/lib/postgresql/data
+    networks:
+      - network_for_api
+    ports:
+      - 5441:5432
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=database-for-testing
+    
+  crud-api:
+    container_name: crud-api
+    tty: true
+    depends_on:
+      - database
+      - api-cache
+    links:
+      - database
+      - api-cache
+    build:
+      context: ../..
+      dockerfile: docker/development/Dockerfile
+    ports:
+      - 3001:3000
+    volumes:
+      - ../../.:/usr/app/
+    env_file:
+      - ../../.env
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@database:5432/going2db
+      - DATABASE_FOR_TESTING_URL=postgres://postgres:postgres@gdatabase-for-testing:5432/going2db-test
+       - REDIS_URL=redis://api-cache:6379
+
+  api-cache:
+    image: redis:7.2-alpine
+    container_name: api-cache
+    restart: always
+    networks:
+      - network_for_api
+    ports:
+      - 6379:6379
+    volumes:
+      - redisdata:/data
+
+networks:
+  network_for_api:
+    name: network_for_api
+    driver: bridge
+
+volumes:
+  pgdata:
+    driver: local
+  pgdata-test:
+    driver: local
+  redisdata:
+    driver: local
