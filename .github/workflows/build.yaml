@@ -14,6 +14,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -78,6 +81,7 @@ jobs:
         run: npx eslint . --ext .ts,.tsx,.js,.jsx
 
   apply-template:
+    name: Create Template for Pull Request
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout código
@@ -147,13 +151,5 @@ jobs:
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
