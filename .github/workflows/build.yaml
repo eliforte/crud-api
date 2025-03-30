@@ -53,6 +53,9 @@ jobs:
           path: ~/.npm
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
+      - name: Init Husky
+        run: npm run husky init
+
       - name: Check Commit
         run: npm run prepare
 
