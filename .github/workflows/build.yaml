@@ -1,14 +1,10 @@
 name: Build
 on:
-  push:
-    branches:
-      - main
-      - homolog
   pull_request:
     branches:
       - main
       - homolog
-    types: [opened, synchronize, reopened]
+    type: [opened, synchronize]
 
 jobs:
   setup:
@@ -23,7 +19,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
       - name: Generate cache key
         id: cache-modules
@@ -51,59 +47,95 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Restore node_modules cache
         uses: actions/cache@v3
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-          restore-keys: |
-            ${{ runner.os }}-node-modules-
 
       - name: Check Commit
-        run: npx commitlint --from ${{ github.event.pull_request.base.sha || format('HEAD~{0}', github.event.commits.length) }} --to ${{ github.sha }} --verbose
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.sha }} --verbose
+          else
+            npx commitlint --from HEAD~${{ github.event.commits.length || 1 }} --to ${{ github.sha }} --verbose
+          fi
 
-  format-code:
-    needs: commitlint
-    name: Format Code with Prettier
+  format:
+    needs: [setup, commitlint]
+    name: Code Formatting
     runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       - name: Restore node_modules cache
         uses: actions/cache@v3
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-          restore-keys: |
-            ${{ runner.os }}-node-modules-
 
-      - name: Format Code
-        run: npx prettier --write \"src/**/*.ts\" \"test/**/*.ts\"
+      - name: Check code formatting
+        id: check-format
+        run: npx prettier --check "src/**/*.ts" "test/**/*.ts" || echo "format-needed=true" >> $GITHUB_OUTPUT
+
+      - name: Auto format code
+        if: github.event_name == 'pull_request' && steps.check-format.outputs.format-needed == 'true'
+        run: npx prettier --write "src/**/*.ts" "test/**/*.ts"
+
+      - name: Commit changes
+        if: github.event_name == 'pull_request' && steps.check-format.outputs.format-needed == 'true'
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add .
+          git commit -m "style: auto-format code with prettier"
+          git push
+
+      - name: Report formatting errors
+        if: github.event_name != 'pull_request' && steps.check-format.outputs.format-needed == 'true'
+        run: |
+          npx prettier --check "src/**/*.ts" "test/**/*.ts" > prettier_results.txt || true
+          while IFS= read -r line; do
+            if [[ $line == *"/"* ]]; then
+              file=$(echo "$line" | cut -d' ' -f1)
+              echo "::error file=$file::Formatting error in $file. Run 'npm run format' to fix."
+            fi
+          done < prettier_results.txt
+          exit 1
 
   lint-code:
-    needs: format-code
-    name: Lint Code with ESLint
+    needs: [setup, format]
+    name: Lint
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Restore node_modules cache
-        uses: actions/cache@v3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
-          path: node_modules
-          key: ${{ needs.setup.outputs.cache-key }}
-          restore-keys: |
-            ${{ runner.os }}-node-modules-
-
-      - name: Run ESLint
-        run: eslint \"{src,apps,libs,test}/**/*.ts\" --fix
+          node-version: 20
+      - run: yarn install
+      - uses: reviewdog/action-eslint@2fee6dd72a5419ff4113f694e2068d2a03bb35dd # v1.33.2
+        with:
+          reporter: github-check
+          eslint_flags: 'src/'
 
   sonarcloud:
-    needs: lint-code
+    needs: [setup, lint-code]
     name: SonarCloud Scan
     runs-on: ubuntu-22.04
 
@@ -112,17 +144,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.head_ref || github.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       - name: Restore node_modules cache
         uses: actions/cache@v3
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-          restore-keys: |
-            ${{ runner.os }}-node-modules-
+          restore-keys: ${{ runner.os }}-node-modules-
 
       - name: Run tests with coverage
-        run: npm run test:cov
+        run: npx jest --coverage
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2

@@ -2,14 +2,14 @@ interface IConstructorProps {
   message: string;
   internalCode: string;
   statusCode?: number;
-  data?: any;
+  data?: Error;
 }
 
 class AppError extends Error {
   protected _message: string;
   protected _internalCode: string;
   protected _httpStatusCode: number;
-  protected _data?: any;
+  protected _data?: Error;
 
   constructor(props: IConstructorProps) {
     super(props.message);
