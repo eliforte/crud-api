@@ -80,7 +80,7 @@ jobs:
             ${{ runner.os }}-node-modules-
 
       - name: Format Code
-        run: npx prettier --write \"src/**/*.ts\" \"test/**/*.ts\"
+        run: npx prettier --write "src/**/*.ts" "test/**/*.ts"
 
   lint-code:
     needs: format-code
@@ -100,7 +100,7 @@ jobs:
             ${{ runner.os }}-node-modules-
 
       - name: Run ESLint
-        run: eslint \"{src,apps,libs,test}/**/*.ts\" --fix
+        run: npx eslint "{src,apps,libs,test}/**/*.ts" --fix --config .eslintrc.cjs
 
   sonarcloud:
     needs: lint-code
@@ -122,7 +122,7 @@ jobs:
             ${{ runner.os }}-node-modules-
 
       - name: Run tests with coverage
-        run: npm run test:cov
+        run: npx jest --coverage
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
