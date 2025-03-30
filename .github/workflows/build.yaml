@@ -15,7 +15,7 @@ jobs:
     name: Setup and Cache Dependencies
     runs-on: ubuntu-22.04
     outputs:
-      node_modules_cache_hit: ${{ steps.cache-npm.outputs.cache-hit }}
+      cache-key: ${{ steps.cache-modules.outputs.cache-key }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,18 +25,20 @@ jobs:
         with:
           node-version: 22
 
-      - name: Cache dependencies
-        id: cache-npm
+      - name: Generate cache key
+        id: cache-modules
+        run: echo "cache-key=${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}" >> $GITHUB_OUTPUT
+
+      - name: Cache node_modules
+        id: cache-node-modules
         uses: actions/cache@v3
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+          path: node_modules
+          key: ${{ steps.cache-modules.outputs.cache-key }}
 
       - name: Install dependencies
-        if: steps.cache-npm.outputs.cache-hit != 'true'
-        run: npm install
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm i
 
   commitlint:
     needs: setup
@@ -46,18 +48,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Restore Cache
+      - name: Restore node_modules cache
         uses: actions/cache@v3
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-
-      - name: Init Husky
-        run: npm run husky init
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: Check Commit
-        run: npm run prepare
+        run: npx commitlint --from ${{ github.event.pull_request.base.sha || format('HEAD~{0}', github.event.commits.length) }} --to ${{ github.sha }} --verbose
 
   format-code:
     needs: commitlint
@@ -68,14 +71,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Restore Cache
+      - name: Restore node_modules cache
         uses: actions/cache@v3
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: Format Code
-        run: npm run format
+        run: npx prettier --write \"src/**/*.ts\" \"test/**/*.ts\"
 
   lint-code:
     needs: format-code
@@ -86,14 +91,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Restore Cache
+      - name: Restore node_modules cache
         uses: actions/cache@v3
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: Run ESLint
-        run: npm run lint
+        run: eslint \"{src,apps,libs,test}/**/*.ts\" --fix
 
   sonarcloud:
     needs: lint-code
@@ -103,12 +110,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Restore Cache
+      - name: Restore node_modules cache
         uses: actions/cache@v3
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: Run tests with coverage
         run: npm run test:cov
@@ -116,4 +127,5 @@ jobs:
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
