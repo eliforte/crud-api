@@ -1,70 +1,17 @@
 name: Build
 on:
-  push:
-    branches:
-      - main
-      - homolog
   pull_request:
     branches:
       - main
       - homolog
-    types: [opened, synchronize, reopened]
+    type: [opened, synchronize]
+
 jobs:
-  commitlint:
+  setup:
+    name: Setup and Cache Dependencies
     runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install required dependencies
-        run: |
-          apt update
-          apt install -y sudo
-          sudo apt install -y git curl
-          curl -sL https://deb.nodesource.com/setup_14.x | sudo -E bash -
-          sudo DEBIAN_FRONTEND=noninteractive apt install -y nodejs
-      - name: Print versions
-        run: |
-          git --version
-          node --version
-          npm --version
-          npx commitlint --version
-      - name: Install commitlint
-        run: |
-          npm install conventional-changelog-conventionalcommits
-          npm install commitlint@latest
-
-      - name: Validate current commit (last commit) with commitlint
-        if: github.event_name == 'push'
-        run: npx commitlint --last --verbose
-
-      - name: Validate PR commits with commitlint
-        if: github.event_name == 'pull_request'
-        run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
-
-  format-code:
-    name: Format Code with Prettier
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Prettify code
-        uses: creyD/prettier_action@v4.3
-        with:
-          prettier_options: --write **/*.{js,md}
-          only_changed: True
-
-  lint-code:
-    name: Lint Code with ESLint
-    runs-on: ubuntu-22.04
-    needs: format-code
-
+    outputs:
+      cache-key: ${{ steps.cache-modules.outputs.cache-key }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -72,84 +19,150 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
+
+      - name: Generate cache key
+        id: cache-modules
+        run: echo "cache-key=${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}" >> $GITHUB_OUTPUT
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ steps.cache-modules.outputs.cache-key }}
 
       - name: Install dependencies
-        run: npm install
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm i
 
-      - name: Run ESLint
-        run: npx eslint . --ext .ts,.tsx,.js,.jsx
-
-  apply-template:
-    name: Create Template for Pull Request
+  commitlint:
+    needs: setup
+    name: Commitlint job
     runs-on: ubuntu-22.04
+
     steps:
-      - name: Checkout código
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Obter primeiro commit do PR
-        id: get_commit
-        run: |
-          FIRST_COMMIT=$(git log --format="%s" -n 1 ${{ github.event.pull_request.head.sha }})
-          echo "FIRST_COMMIT=$FIRST_COMMIT" >> $GITHUB_ENV
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-      - name: Selecionar template baseado no prefixo do commit
-        id: select_template
+      - name: Restore node_modules cache
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+
+      - name: Check Commit
         run: |
-          if [[ "${{ env.FIRST_COMMIT }}" =~ ^feat ]]; then
-            echo "TEMPLATE=feature.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^fix ]]; then
-            echo "TEMPLATE=bugfix.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^chore ]]; then
-            echo "TEMPLATE=chore.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^refactor ]]; then
-            echo "TEMPLATE=refactor.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^perf ]]; then
-            echo "TEMPLATE=perf.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^perf ]]; then
-            echo "TEMPLATE=perf.md" >> $GITHUB_ENV
-          elif [[ "${{ env.FIRST_COMMIT }}" =~ ^perf ]]; then
-            echo "TEMPLATE=perf.md" >> $GITHUB_ENV
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.sha }} --verbose
+          else
+            npx commitlint --from HEAD~${{ github.event.commits.length || 1 }} --to ${{ github.sha }} --verbose
           fi
 
-      - name: Atualizar descrição do PR
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const templatePath = `.github/PULL_REQUEST_TEMPLATE/${process.env.TEMPLATE}`;
-            if (fs.existsSync(templatePath)) {
-              const templateContent = fs.readFileSync(templatePath, 'utf8');
-              github.rest.pulls.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.payload.pull_request.number,
-                body: templateContent
-              });
-            }
-
-  sonarcloud:
-    name: SonarCloud Scan
+  format:
+    needs: [setup, commitlint]
+    name: Code Formatting
     runs-on: ubuntu-22.04
-    needs: lint-code
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
-      - name: Install dependencies
-        run: npm install
+      - name: Restore node_modules cache
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+
+      - name: Check code formatting
+        id: check-format
+        run: npx prettier --check "src/**/*.ts" "test/**/*.ts" || echo "format-needed=true" >> $GITHUB_OUTPUT
+
+      - name: Auto format code
+        if: github.event_name == 'pull_request' && steps.check-format.outputs.format-needed == 'true'
+        run: npx prettier --write "src/**/*.ts" "test/**/*.ts"
+
+      - name: Commit changes
+        if: github.event_name == 'pull_request' && steps.check-format.outputs.format-needed == 'true'
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add .
+          git commit -m "style: auto-format code with prettier"
+          git push
+
+      - name: Report formatting errors
+        if: github.event_name != 'pull_request' && steps.check-format.outputs.format-needed == 'true'
+        run: |
+          npx prettier --check "src/**/*.ts" "test/**/*.ts" > prettier_results.txt || true
+          while IFS= read -r line; do
+            if [[ $line == *"/"* ]]; then
+              file=$(echo "$line" | cut -d' ' -f1)
+              echo "::error file=$file::Formatting error in $file. Run 'npm run format' to fix."
+            fi
+          done < prettier_results.txt
+          exit 1
+
+  lint-code:
+    needs: [setup, format]
+    name: Lint
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: 20
+      - run: yarn install
+      - uses: reviewdog/action-eslint@2fee6dd72a5419ff4113f694e2068d2a03bb35dd # v1.33.2
+        with:
+          reporter: github-check
+          eslint_flags: 'src/'
+
+  sonarcloud:
+    needs: [setup, lint-code]
+    name: SonarCloud Scan
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref || github.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore node_modules cache
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: ${{ runner.os }}-node-modules-
 
       - name: Run tests with coverage
-        run: npm run test:cov
+        run: npx jest --coverage
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
