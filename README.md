@@ -1,12 +1,1 @@
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![SonarQube Cloud](https://sonarcloud.io/images/project_badges/sonarcloud-light.svg)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=bugs)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=coverage)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
-[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=eliforte_crud-api&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=eliforte_crud-api)
+
